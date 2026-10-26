@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kettle Wake-up</title>
+<style>
+  :root {
+    --bg: #f6f4f1; --card: #ffffff; --text: #1c1b1a; --muted: #6b6762; --line: #e4e0da;
+    --accent: #b5532a; --accent-text: #ffffff; --ok: #2f7d4f; --warn: #a86a00; --bad: #b3261e;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161514; --card: #201f1d; --text: #ecebe8; --muted: #a29d96; --line: #34322f;
+      --accent: #e07a4c; --accent-text: #1a0f0a; --ok: #6cc28f; --warn: #e3a944; --bad: #f08a80;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 26rem; margin: 0 auto; padding: max(1.5rem, env(safe-area-inset-top)) 1rem 2rem; }
+  h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 1rem; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.1rem; margin-bottom: 1rem; }
+  .label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: .3rem; text-transform: uppercase; letter-spacing: .04em; }
+  input[type=time] { width: 100%; font-size: 2.6rem; font-variant-numeric: tabular-nums; padding: .2rem .4rem;
+                     border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--text); }
+  .temp { display: flex; align-items: center; gap: .75rem; margin-top: 1rem; }
+  .temp output { font-size: 1.6rem; font-variant-numeric: tabular-nums; min-width: 4.5ch; text-align: right; }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-top: 1rem; }
+  .seg button { flex: 1; border: 0; padding: .6rem; background: transparent; color: var(--text); font: inherit; cursor: pointer; }
+  .seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-text); }
+  .actions { display: flex; gap: .6rem; margin-top: 1.2rem; }
+  .btn { flex: 1; padding: .8rem; border-radius: 10px; border: 1px solid var(--line); background: transparent;
+         color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .plan-time { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: .35rem 1rem; margin: 0; }
+  dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .dot::before { content: ""; display: inline-block; width: .55rem; height: .55rem; border-radius: 50%;
+                 margin-right: .4rem; background: currentColor; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); } .muted { color: var(--muted); }
+  #msg { min-height: 1.4em; font-size: .9rem; margin-top: .8rem; }
+  .small { font-size: .85rem; color: var(--muted); margin: .8rem 0 0; }
+  .linkbtn { background: none; border: 0; color: var(--accent); font: inherit; padding: 0 0 0 .4rem; cursor: pointer; text-decoration: underline; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kettle wake-up</h1>
+
+  <section aria-labelledby="plan-h">
+    <span class="label" id="plan-h">Current plan</span>
+    <div id="plan">Loading…</div>
+  </section>
+
+  <section>
+    <form id="form">
+      <label class="label" for="time">Wake time</label>
+      <input type="time" id="time" required value="06:30">
+      <div class="temp">
+        <input type="range" id="temp" min="40" max="100" step="0.5" value="96" aria-label="Temperature">
+        <output id="tempOut" for="temp">96 °C</output>
+      </div>
+      <div class="seg" role="group" aria-label="Repeat">
+        <button type="button" data-repeat="daily" aria-pressed="true">Every day</button>
+        <button type="button" data-repeat="once" aria-pressed="false">Once</button>
+      </div>
+      <div class="actions">
+        <button class="btn primary" type="submit" id="save">Set wake-up</button>
+        <button class="btn" type="button" id="cancel">Turn off</button>
+      </div>
+      <div id="msg" role="status"></div>
+    </form>
+  </section>
+
+  <section aria-labelledby="kettle-h">
+    <span class="label" id="kettle-h">Kettle</span>
+    <dl id="kettle"></dl>
+    <p class="small" id="kettleNote" hidden>The kettle drops off WiFi while heating; the schedule still runs on the kettle itself.</p>
+  </section>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  // Build DOM nodes without innerHTML: kettle-reported strings are untrusted LAN data.
+  function el(tag, props = {}, ...children) {
+    const node = Object.assign(document.createElement(tag), props);
+    node.append(...children.filter((c) => c != null));
+    return node;
+  }
+  const pad = (n) => String(n).padStart(2, "0");
+  const fmtTemp = (c) => c == null ? "—" : `${Number(c).toFixed(Number(c) % 1 ? 1 : 0)} °C`;
+  const STATES = { S_Off: "Idle", S_Heat: "Heating", S_StartupToTempr: "Heating", S_Hold: "Holding", S_NoWater: "No water" };
+
+  let repeat = "daily";
+  $("temp").addEventListener("input", () => { $("tempOut").textContent = fmtTemp($("temp").value); });
+  document.querySelectorAll("[data-repeat]").forEach((b) => b.addEventListener("click", () => {
+    repeat = b.dataset.repeat;
+    document.querySelectorAll("[data-repeat]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  }));
+
+  function say(text, cls = "") { $("msg").textContent = text; $("msg").className = cls; }
+
+  async function call(method, url, body) {
+    const res = await fetch(url, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body && JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : `Request failed (${res.status})`);
+    return data;
+  }
+
+  function render(s) {
+    const p = s.plan;
+    let plan;
+    if (p && p.active) {
+      plan = [
+        el("div", {}, el("span", { className: "plan-time", textContent: `${pad(p.hour)}:${pad(p.minute)}` }),
+           ` · ${fmtTemp(p.temp_c)} · ${p.repeat === "daily" ? "every day" : "once"}`),
+        s.armed ? el("div", { className: "ok dot", textContent: "Armed on kettle" })
+                : el("div", { className: "warn dot", textContent: "Waiting for kettle to come online" }),
+      ];
+    } else if (s.pending_disarm) {
+      plan = [el("div", { className: "warn dot", textContent: "Turning off when kettle is back online" })];
+    } else {
+      plan = [el("div", { className: "muted", textContent: "No wake-up set" })];
+    }
+    $("plan").replaceChildren(...plan);
+
+    const rows = [];
+    if (s.reachable) {
+      const label = (STATES[s.state] || String(s.state)) + (s.on_base ? "" : " · off base");
+      rows.push(["Status", el("span", { className: "ok dot", textContent: label })]);
+      rows.push(["Water", fmtTemp(s.temp_c)]);
+      const drift = s.clock_drift_minutes;
+      const clock = el("span", {}, String(s.kettle_clock ?? "—"));
+      if (drift) {
+        clock.append(" ", el("span", { className: "warn", textContent: `(${drift > 0 ? "+" : ""}${drift} min)` }),
+                     el("button", { className: "linkbtn", type: "button", textContent: "Sync", onclick: syncClock }));
+      }
+      rows.push(["Clock", clock]);
+    } else {
+      rows.push(["Status", el("span", { className: "muted dot", textContent: "Offline" })]);
+    }
+    $("kettleNote").hidden = !!s.reachable;
+    $("kettle").replaceChildren(...rows.flatMap(([k, v]) => [el("dt", { textContent: k }), el("dd", {}, v)]));
+  }
+
+  async function syncClock() {
+    try { await call("POST", "/api/clock/sync"); say("Kettle clock synced.", "ok"); refresh(); }
+    catch (e) { say(e.message, "bad"); }
+  }
+
+  async function refresh() {
+    try { render(await call("GET", "/api/status")); } catch { $("plan").textContent = "App unreachable"; }
+  }
+
+  $("form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const [hour, minute] = $("time").value.split(":").map(Number);
+    $("save").disabled = true; say("Setting…");
+    try {
+      const r = await call("PUT", "/api/plan", { hour, minute, temp_c: Number($("temp").value), repeat });
+      r.kettle === "armed" ? say("Wake-up set on the kettle.", "ok") : say(r.detail, "warn");
+    } catch (e) { say(e.message, "bad"); }
+    $("save").disabled = false; refresh();
+  });
+
+  $("cancel").addEventListener("click", async () => {
+    try {
+      const r = await call("DELETE", "/api/plan");
+      r.kettle === "disarmed" ? say("Wake-up turned off.", "ok") : say(r.detail, "warn");
+    } catch (e) { say(e.message, "bad"); }
+    refresh();
+  });
+
+  (async () => {
+    try {
+      const s = await call("GET", "/api/status");
+      if (s.plan) {
+        $("time").value = `${pad(s.plan.hour)}:${pad(s.plan.minute)}`;
+        $("temp").value = s.plan.temp_c; $("tempOut").textContent = fmtTemp(s.plan.temp_c);
+        document.querySelector(`[data-repeat="${s.plan.repeat}"]`)?.click();
+      }
+      render(s);
+    } catch { $("plan").textContent = "App unreachable"; }
+    setInterval(refresh, 15000);
+  })();
+</script>
+</body>
+</html>
