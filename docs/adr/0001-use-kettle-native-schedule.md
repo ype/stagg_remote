@@ -33,7 +33,7 @@ cannot fire twice.
 ## Consequences
 
 * A daily plan depends on the kettle rejoining WiFi at some point between one firing and the
-  next wake time. If it only rejoins after a power cycle, daily plans need a BLE re-arm path
-  (follow-up).
+  next wake time. It was observed to rejoin as soon as it returned to idle (after a dial-off),
+  with no power cycle. Rejoining after an unattended hold timeout is still to be confirmed.
 * The kettle has a single schedule slot, so the app supports one wake time.
 * The schedule follows the kettle clock. The app shows clock drift and offers a sync.

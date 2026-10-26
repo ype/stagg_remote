@@ -60,6 +60,9 @@ fired     f7 17 00 00 64 80 c0 80 00 00 0d 0d 00 1e 00 00 08   disarmed; target 
 * The schedule runs on the **kettle's own clock**; set it with mask `0x0010` (minute at 10, hour at 11).
 * When it fires the kettle disarms the schedule, copies the schedule temperature to the target,
   starts heating — and **drops off WiFi** while heating.
+* It **rejoins WiFi by itself once back in `S_Off`** (observed 29 min later, right after a
+  manual dial-off; no reboot — the `/temp` uptime counter was continuous, no power cycle needed).
+  Not yet observed: rejoining unattended when the hold timer expires.
 * There is no once/daily flag in the record. The `setsetting Repeat_sched` / `schedon` CLI writes
   that bramboe reports as working on 1.2.26 had **no observable effect on this build**, so the app
   treats every arm as one-shot and re-arms daily plans itself.
