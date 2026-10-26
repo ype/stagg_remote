@@ -24,5 +24,5 @@ All notable changes to this project are documented here. The format follows
 - `WakeService` with a persisted wake plan (once or daily), a background reconcile loop that
   re-arms daily plans after each firing, and a 3-minute guard against firing twice.
 - FastAPI app with status, plan, cancel and clock-sync endpoints, plus a mobile-first single-page UI.
-- Dockerfile (multi-stage, non-root, tzdata), docker-compose and GitHub Actions CI.
+- Dockerfile (multi-stage, non-root, tzdata) and docker-compose.
 - ADR 0001: use the kettle's native schedule instead of BLE power or a firmware downgrade.
