@@ -58,6 +58,7 @@ def create_app(settings: Settings | None = None, client: KettleClient | None = N
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        store.check_writable()
         task = asyncio.create_task(reconcile_loop())
         yield
         task.cancel()

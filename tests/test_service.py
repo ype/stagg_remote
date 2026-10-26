@@ -128,3 +128,10 @@ def test_plan_validation() -> None:
         WakePlan(hour=6, minute=30, temp_c=101, repeat="daily")
     with pytest.raises(ValueError):
         WakePlan(hour=25, minute=30, temp_c=90, repeat="daily")
+
+
+def test_store_check_writable_rejects_readonly_dir(tmp_path: Path) -> None:
+    ro = tmp_path / "ro"
+    ro.mkdir(mode=0o500)
+    with pytest.raises(PermissionError):
+        PlanStore(ro / "state.json").check_writable()

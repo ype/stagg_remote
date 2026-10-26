@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- `PUT /api/plan` returned 500 under docker compose. Root cause: Docker auto-created the `./data`
+  bind mount as root, so the non-root app user (uid 1000) couldn't write `state.json`. Compose now
+  uses a named volume, which inherits the image's `/data` ownership, and the app checks at startup
+  that its state directory is writable.
+
 ## [0.1.0] - 2026-10-26
 
 ### Added

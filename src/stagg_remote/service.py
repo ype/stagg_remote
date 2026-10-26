@@ -9,6 +9,7 @@ once the kettle is back on WiFi and idle.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -47,6 +48,13 @@ class PlanStore:
         if not self._path.exists():
             return StoredState()
         return StoredState.model_validate_json(self._path.read_text())
+
+    def check_writable(self) -> None:
+        """Fail at startup rather than on the first save (e.g. a root-owned bind mount)."""
+        directory = self._path.parent
+        directory.mkdir(parents=True, exist_ok=True)
+        if not os.access(directory, os.W_OK):
+            raise PermissionError(f"state directory {directory} is not writable by uid {os.getuid()}")
 
     def save(self, state: StoredState) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
